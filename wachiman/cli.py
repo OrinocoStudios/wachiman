@@ -14,6 +14,9 @@
     wachiman radar geo-update           download/refresh the offline IP owner database
     wachiman service install|uninstall|status
                                         run `radar watch` in the background (macOS launchd)
+    wachiman setup [--non-interactive]  first-run wizard: language, optional Telegram alerts
+    wachiman web [--port 8765]          read-only history page on http://127.0.0.1:8765
+    wachiman uninstall                  stop the background service and show how to remove the rest
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ import time
 from pathlib import Path
 from typing import Callable, List, Mapping, Optional
 
-from . import notify, paths, service
+from . import notify, paths, service, setup, web
 from .radar import devices, geo, keyboard, net, sensors, store, traffic
 
 UNITS = {"m": 60, "h": 3600, "d": 86400}
@@ -82,6 +85,12 @@ def _parser() -> argparse.ArgumentParser:
     rsub.add_parser("geo-update", help="download the offline IP owner database")
     svc = sub.add_parser("service", help="run the radar in the background (macOS)")
     svc.add_argument("action", choices=["install", "uninstall", "status"])
+    st = sub.add_parser("setup", help="first-run wizard (language, Telegram)")
+    st.add_argument("--non-interactive", action="store_true", help="read values from WACHIMAN_* environment variables")
+    wb = sub.add_parser("web", help="local read-only page with the history (127.0.0.1 only)")
+    wb.add_argument("--port", type=int, default=8765)
+    wb.add_argument("--host", default="127.0.0.1", help=argparse.SUPPRESS)
+    sub.add_parser("uninstall", help="stop the background service and explain how to remove the rest")
     return p
 
 
@@ -100,6 +109,21 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
         if args.action == "install":
             return service.install(Path(__file__).resolve().parent.parent, sys.executable)
         return service.uninstall() if args.action == "uninstall" else service.status()
+    if args.module == "setup":
+        return setup.run(env, non_interactive=args.non_interactive)
+    if args.module == "web":
+        try:
+            return web.serve(args.host, args.port, env)
+        except ValueError as exc:
+            print("error: %s" % exc, file=sys.stderr)
+            return 2
+    if args.module == "uninstall":
+        code = service.uninstall()
+        home = paths.home(env)
+        print("Your history and settings are still in %s" % home)
+        print("To remove everything: rm -rf '%s'" % home)
+        print("Also remove the command link if present: rm -f ~/.local/bin/wachiman")
+        return code
     if args.module != "radar" or not args.cmd:
         parser.print_help()
         return 2

@@ -61,7 +61,7 @@ class ApiTest(unittest.TestCase):
         self.assertIn("counts", body)
 
     def test_summary_nothing_new(self):
-        status, body = self.call("/api/summary", {"since": "1m"})
+        status, body = web.handle(self.db, "/api/summary", {"since": "1m"}, NOW + 3600, "en")
         self.assertEqual(body["headline"], "In the last 1 min: nothing new. All quiet.")
 
     def test_summary_singular_and_spanish(self):

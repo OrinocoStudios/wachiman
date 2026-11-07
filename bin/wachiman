@@ -1,4 +1,12 @@
 #!/bin/sh
-# Run wachiman from a checkout without installing anything.
-DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Run wachiman from a checkout without installing anything. Works through symlinks.
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
+  esac
+done
+DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
 PYTHONPATH="$DIR${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m wachiman "$@"
