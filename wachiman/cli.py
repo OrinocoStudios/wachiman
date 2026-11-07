@@ -12,18 +12,26 @@
                                         USB devices, paired Bluetooth devices and networks seen
     wachiman radar events [--since 7d]  what was worth an alert
     wachiman radar geo-update           download/refresh the offline IP owner database
-    wachiman service install|uninstall|status
-                                        run `radar watch` in the background (macOS launchd)
+    wachiman service install|uninstall|status [--agent radar|gateway|memwatch|stealerwatch]
+                                        run a watcher in the background (macOS launchd)
+    wachiman guard start|start-nolock|stop|status
+                                        screen-lock Guard: alert + webcam photos on activity while locked
+    wachiman stealerwatch scan|baseline|watch|test
+                                        persistence points, stealer artefacts, known C2 domains
+    wachiman memwatch now|watch|test    memory pressure and swapout rate alerts
+    wachiman gateway run [--once /CMD]  Telegram command bot for all of the above
 """
 from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Callable, List, Mapping, Optional
 
+from . import gateway as gateway_mod
 from . import notify, paths, service
 from .radar import devices, geo, keyboard, net, sensors, store, traffic
 
@@ -82,14 +90,50 @@ def _parser() -> argparse.ArgumentParser:
     rsub.add_parser("geo-update", help="download the offline IP owner database")
     svc = sub.add_parser("service", help="run the radar in the background (macOS)")
     svc.add_argument("action", choices=["install", "uninstall", "status"])
+    svc.add_argument("--agent", choices=sorted(service.AGENTS), default="radar")
+    gd = sub.add_parser("guard", help="alert + webcam photos on activity while the screen is locked")
+    gd.add_argument("action", choices=["start", "start-nolock", "stop", "status"])
+    sw = sub.add_parser("stealerwatch", help="persistence and stealer traces")
+    sw.add_argument("action", choices=["scan", "baseline", "watch", "once", "test"])
+    mw = sub.add_parser("memwatch", help="memory pressure alerts")
+    mw.add_argument("action", choices=["now", "watch", "test"])
+    gw = sub.add_parser("gateway", help="Telegram command bot")
+    gw.add_argument("action", choices=["run"])
+    gw.add_argument("--once", metavar="CMD", help="run one command (e.g. /status) and exit")
     return p
+
+
+REPO = Path(__file__).resolve().parent.parent
+
+SCRIPTS = {  # (module, action) -> (script, fixed argv). Never built from user text.
+    ("guard", "start"): ("guard/guardctl.sh", ["start"]),
+    ("guard", "start-nolock"): ("guard/guardctl.sh", ["start-nolock"]),
+    ("guard", "stop"): ("guard/guardctl.sh", ["stop"]),
+    ("guard", "status"): ("guard/guardctl.sh", ["status"]),
+    ("stealerwatch", "scan"): ("stealerwatch/stealerwatch.sh", ["--dry"]),
+    ("stealerwatch", "baseline"): ("stealerwatch/stealerwatch.sh", ["--baseline"]),
+    ("stealerwatch", "watch"): ("stealerwatch/stealerwatch.sh", []),
+    ("stealerwatch", "once"): ("stealerwatch/stealerwatch.sh", ["--once"]),
+    ("stealerwatch", "test"): ("stealerwatch/stealerwatch.sh", ["--test"]),
+    ("memwatch", "now"): ("memwatch/memwatch.sh", ["--dry"]),
+    ("memwatch", "watch"): ("memwatch/memwatch.sh", []),
+    ("memwatch", "test"): ("memwatch/memwatch.sh", ["--test"]),
+}
+
+
+def _run_script(argv: List[str], env: Mapping[str, str]) -> int:
+    try:
+        return subprocess.call(argv, env=dict(env))
+    except KeyboardInterrupt:
+        return 130
 
 
 def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = None,
          sampler: Callable = net.sample, traffic_sampler: Callable = traffic.sample,
          sensor_reader: Callable = sensors.read, keyboard_reader: Callable = keyboard.read,
          device_reader: Callable = devices.read, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
-         clock: Callable[[], float] = time.time) -> int:
+         clock: Callable[[], float] = time.time, script_runner: Callable = _run_script,
+         gateway_runner: Callable = gateway_mod.main) -> int:
     env = os.environ if env is None else env
     parser = _parser()
     try:
@@ -98,8 +142,13 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
         return int(exc.code or 0)
     if args.module == "service":
         if args.action == "install":
-            return service.install(Path(__file__).resolve().parent.parent, sys.executable)
-        return service.uninstall() if args.action == "uninstall" else service.status()
+            return service.install(REPO, sys.executable, args.agent)
+        return service.uninstall(args.agent) if args.action == "uninstall" else service.status(args.agent)
+    if args.module in ("guard", "stealerwatch", "memwatch"):
+        script, fixed = SCRIPTS[(args.module, args.action)]
+        return int(script_runner(["/bin/bash", str(REPO / "modules" / script)] + fixed, env))
+    if args.module == "gateway":
+        return int(gateway_runner(paths.settings(env), paths.home(env), REPO, args.once, env))
     if args.module != "radar" or not args.cmd:
         parser.print_help()
         return 2
