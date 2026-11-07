@@ -1,0 +1,4 @@
+#!/bin/sh
+# Run wachiman from a checkout without installing anything.
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PYTHONPATH="$DIR${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m wachiman "$@"

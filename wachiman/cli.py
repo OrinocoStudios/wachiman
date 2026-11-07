@@ -1,0 +1,135 @@
+"""wachiman command line.
+
+    wachiman radar scan                 take one sample, store it, alert on news
+    wachiman radar watch                scan forever every WACHIMAN_RADAR_INTERVAL seconds
+    wachiman radar net [--since 24h] [--app NAME]
+                                        history: which app reached which company/country
+    wachiman radar events [--since 7d]  what was worth an alert
+    wachiman radar geo-update           download/refresh the offline IP owner database
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Callable, List, Mapping, Optional
+
+from . import notify, paths
+from .radar import geo, net, store
+
+UNITS = {"m": 60, "h": 3600, "d": 86400}
+
+
+def parse_since(text: Optional[str], now: int) -> Optional[int]:
+    if not text:
+        return None
+    text = text.strip().lower()
+    if text[-1:] in UNITS and text[:-1].isdigit():
+        return now - int(text[:-1]) * UNITS[text[-1]]
+    raise ValueError("--since: use e.g. 30m, 24h, 7d")
+
+
+def _dest(proto: str, ip: str, port: int) -> str:
+    host = "[%s]" % ip if ":" in ip else ip
+    return "%s %s:%s" % (proto.lower(), host, port)
+
+
+def _fmt_ts(ts: int) -> str:
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
+
+
+def _table(rows: List[List[str]], headers: List[str]) -> str:
+    widths = [max(len(str(x)) for x in col) for col in zip(headers, *rows)] if rows else [len(h) for h in headers]
+    line = lambda r: "  ".join(str(v).ljust(w) for v, w in zip(r, widths)).rstrip()
+    return "\n".join([line(headers), line(["-" * w for w in widths])] + [line(r) for r in rows])
+
+
+def _parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="wachiman", description="See what your computer does when you are not looking.")
+    sub = p.add_subparsers(dest="module")
+    radar = sub.add_parser("radar", help="network history per app")
+    rsub = radar.add_subparsers(dest="cmd")
+    rsub.add_parser("scan", help="one sample now")
+    rsub.add_parser("watch", help="scan forever")
+    n = rsub.add_parser("net", help="connection history")
+    n.add_argument("--since", default="24h")
+    n.add_argument("--app")
+    e = rsub.add_parser("events", help="alerts history")
+    e.add_argument("--since", default="7d")
+    rsub.add_parser("geo-update", help="download the offline IP owner database")
+    return p
+
+
+def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = None,
+         sampler: Callable = net.sample, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
+         clock: Callable[[], float] = time.time) -> int:
+    env = os.environ if env is None else env
+    parser = _parser()
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return int(exc.code or 0)
+    if args.module != "radar" or not args.cmd:
+        parser.print_help()
+        return 2
+
+    settings = paths.settings(env)
+    lang = settings.get("WACHIMAN_LANG", "en")
+    now = int(clock())
+
+    if args.cmd == "geo-update":
+        dest = paths.geo_db_path(env)
+        tmp = dest.with_name("ip2asn.tsv.gz")
+        print("downloading %s ..." % geo.SOURCE_URL)
+        geo.download(tmp)
+        n = geo.build(tmp, dest)
+        tmp.unlink()
+        print("ok: %d ranges in %s" % (n, dest))
+        return 0
+
+    db = store.Store(paths.db_path(env))
+    try:
+        if args.cmd in ("scan", "watch"):
+            g = geo_factory(paths.geo_db_path(env))
+            if not g.available:
+                print("note: no IP owner database yet, run `wachiman radar geo-update`", file=sys.stderr)
+            try:
+                interval = max(5, int(settings.get("WACHIMAN_RADAR_INTERVAL", "30") or 30))
+                while True:
+                    first = not db._baseline_done()
+                    sample = sampler()
+                    events = db.record(int(clock()), sample, g.lookup)
+                    if first:
+                        print("baseline learned: %d connections. From now on only news is reported." % len(sample))
+                    else:
+                        print("%s  %d connections, %d new" % (_fmt_ts(int(clock())), len(sample), len(events)))
+                    for ev in events:
+                        sender(settings, notify.message(ev, lang))
+                    if args.cmd == "scan":
+                        return 0
+                    time.sleep(interval)
+            finally:
+                g.close()
+
+        if args.cmd == "net":
+            rows = db.connections(since=parse_since(args.since, now), app=args.app)
+            print(_table([[r["app"], r["country"] or "?", r["org"] or "?", _dest(r["proto"], r["remote_ip"], r["remote_port"]),
+                           _fmt_ts(r["first_seen"]), _fmt_ts(r["last_seen"]), str(r["samples"])] for r in rows],
+                         ["APP", "CC", "OWNER", "DESTINATION", "FIRST SEEN", "LAST SEEN", "SEEN"]))
+            return 0
+
+        if args.cmd == "events":
+            rows = db.events(since=parse_since(args.since, now))
+            print(_table([[_fmt_ts(r["ts"]), r["kind"], r["app"], r["country"] or "?", r["org"] or "?",
+                           r["remote_ip"] or "?"] for r in rows],
+                         ["WHEN", "KIND", "APP", "CC", "OWNER", "IP"]))
+            return 0
+    finally:
+        db.close()
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

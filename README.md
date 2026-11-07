@@ -25,7 +25,7 @@ Early. The first modules run on the author's Mac and are being cleaned up for pu
 | Guard | Alert plus webcam photos when someone touches the computer while the screen is locked | Running privately, being ported |
 | Stealer watch | New LaunchAgents and login items, stealer artefacts, known command-and-control domains | Running privately, being ported |
 | Memory watch | Memory pressure and swap rate alerts | Running privately, being ported |
-| **Radar: network** | Which app connects where (domain, company, country) and how much it sends | **Next** |
+| **Radar: network** | Which app connects where (company and country) | **Usable** (CLI, alerts) |
 | Radar: mic and camera | Which app turned them on, when and for how long | Planned |
 | Radar: permissions | Apps granted keyboard (Input Monitoring, Accessibility) or screen recording access | Planned |
 | Radar: devices | New USB, Bluetooth and Wi-Fi networks | Planned |
@@ -33,10 +33,58 @@ Early. The first modules run on the author's Mac and are being cleaned up for pu
 
 Platform: **macOS** first. Linux is a goal once the macOS modules are stable.
 
+## Try the network radar
+
+Needs only the `python3` and `lsof` that ship with macOS. Nothing to install.
+
+```sh
+git clone https://github.com/OrinocoStudios/wachiman.git
+cd wachiman
+bin/wachiman radar geo-update   # once: offline database of who owns each IP (~8 s)
+bin/wachiman radar scan         # first scan learns what is normal, reports nothing
+bin/wachiman radar watch        # keeps scanning; reports only what is new
+```
+
+In another terminal:
+
+```sh
+bin/wachiman radar net --since 24h        # which app reached which company and country
+bin/wachiman radar net --app Slack
+bin/wachiman radar events --since 7d      # what was worth an alert
+```
+
+What counts as news, on purpose only two things so it stays quiet:
+
+- an app that never used the internet before does so now;
+- a known app reaches a **country** it never reached before.
+
+**CC is the country where the company owning the IP is registered**, not where the server physically sits. A Google server in Ireland shows as `US`. That is what matters for "who gets my data", and it needs no online lookups.
+
+## Settings and files
+
+Everything lives under `~/.wachiman/` by default; nothing is tied to a user name or a fixed path.
+
+| Variable | Default | What |
+|---|---|---|
+| `WACHIMAN_HOME` | `~/.wachiman` | data folder |
+| `WACHIMAN_DB` | `$WACHIMAN_HOME/radar.db` | history (SQLite) |
+| `WACHIMAN_GEO_DB` | `$WACHIMAN_HOME/geo.db` | IP owner database |
+| `WACHIMAN_RADAR_INTERVAL` | `30` | seconds between scans |
+| `WACHIMAN_TELEGRAM_BOT_TOKEN` / `_CHAT_ID` | empty | alerts on Telegram (optional) |
+| `WACHIMAN_LANG` | `en` | alert language: `en`, `es` |
+
+Put them in `$WACHIMAN_HOME/config.env` (see [config.env.example](config.env.example)) or export them; the environment wins.
+
+## Tests
+
+```sh
+python3 -m unittest discover -s tests -t .
+```
+
 ## Roadmap
 
-1. Repository, licence and layout. *(this commit)*
-2. Radar: network history per app.
+1. Repository, licence and layout. ✅
+2. Radar: network history per app. ✅ (bytes sent per app: next)
 3. Radar: microphone and camera.
 4. Radar: keyboard and screen permissions.
 5. Radar: devices.
