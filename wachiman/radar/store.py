@@ -8,6 +8,7 @@ What counts as news (deliberately few, to avoid alert fatigue):
   new_app      an app that never used the network before does so now
   new_country  a known app reaches a country it never reached before
   big_upload   one app sent more than the configured limit within one clock hour
+  new_sensor_app  an app uses the mic, camera or screen recording for the first time
 The very first sample only learns the baseline and reports nothing.
 """
 from __future__ import annotations
@@ -15,7 +16,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from .geo import Owner
 from .net import Socket
@@ -33,6 +34,11 @@ CREATE TABLE IF NOT EXISTS events (
   remote_ip TEXT, country TEXT, org TEXT
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS sensor_sessions (
+  id INTEGER PRIMARY KEY, kind TEXT NOT NULL, app TEXT NOT NULL, bundle TEXT NOT NULL,
+  start INTEGER NOT NULL, "end" INTEGER
+);
+CREATE INDEX IF NOT EXISTS sensor_sessions_start ON sensor_sessions (start);
 CREATE TABLE IF NOT EXISTS traffic (
   app TEXT NOT NULL, hour INTEGER NOT NULL, bytes_in INTEGER NOT NULL, bytes_out INTEGER NOT NULL,
   alerted INTEGER NOT NULL DEFAULT 0,
@@ -50,6 +56,7 @@ class Event:
     country: Optional[str]
     org: Optional[str]
     bytes_out: int = 0
+    sensor: Optional[str] = None
 
 
 Lookup = Callable[[str], Optional[Owner]]
@@ -65,6 +72,8 @@ class Store:
         cols = {r[1] for r in self.con.execute("PRAGMA table_info(events)")}
         if "bytes_out" not in cols:  # databases created by older versions
             self.con.execute("ALTER TABLE events ADD COLUMN bytes_out INTEGER NOT NULL DEFAULT 0")
+        if "sensor" not in cols:
+            self.con.execute("ALTER TABLE events ADD COLUMN sensor TEXT")
 
     def close(self) -> None:
         self.con.close()
@@ -108,6 +117,41 @@ class Store:
             q += " WHERE hour >= ?"
             args.append(since - since % 3600)
         return self.con.execute(q + " GROUP BY app ORDER BY bytes_out DESC, app", args).fetchall()
+
+    def sensors_active(self) -> Set[Tuple[str, str, str]]:
+        rows = self.con.execute('SELECT kind, app, bundle FROM sensor_sessions WHERE "end" IS NULL')
+        return {(r[0], r[1], r[2]) for r in rows}
+
+    def record_sensors(self, states: Iterable[Tuple[float, Set[Tuple[str, str, str]]]],
+                       learning: bool) -> List[Event]:
+        """Apply indicator changes in order; alert the first time an app uses a given sensor."""
+        events: List[Event] = []
+        active = self.sensors_active()
+        known = {(r[0], r[1]) for r in self.con.execute("SELECT DISTINCT kind, bundle FROM sensor_sessions")}
+        with self.con:
+            for ts_f, now in states:
+                ts = int(ts_f)
+                for kind, app, bundle in now - active:
+                    self.con.execute('INSERT INTO sensor_sessions (kind, app, bundle, start) VALUES (?,?,?,?)',
+                                     (kind, app, bundle, ts))
+                    if not learning and (kind, bundle) not in known:
+                        e = Event(ts, "new_sensor_app", app, None, None, None, 0, kind)
+                        self.con.execute("INSERT INTO events (ts, kind, app, sensor) VALUES (?,?,?,?)",
+                                         (ts, e.kind, app, kind))
+                        events.append(e)
+                    known.add((kind, bundle))
+                for kind, app, bundle in active - now:
+                    self.con.execute('UPDATE sensor_sessions SET "end"=? WHERE kind=? AND bundle=? AND app=?'
+                                     ' AND "end" IS NULL', (ts, kind, bundle, app))
+                active = set(now)
+        return events
+
+    def sensor_sessions(self, since: Optional[int] = None) -> List[sqlite3.Row]:
+        q, args = "SELECT * FROM sensor_sessions", []
+        if since is not None:
+            q += ' WHERE "end" IS NULL OR "end" >= ?'
+            args.append(since)
+        return self.con.execute(q + " ORDER BY start DESC, id DESC", args).fetchall()
 
     def _baseline_done(self) -> bool:
         return self.con.execute("SELECT 1 FROM meta WHERE key='baseline'").fetchone() is not None

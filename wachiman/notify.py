@@ -7,6 +7,7 @@ import urllib.request
 from typing import Callable, Dict, Mapping, Optional
 
 from .radar.store import Event
+from .radar.sensors import label as sensor_label
 from .radar.traffic import human
 
 COUNTRIES: Dict[str, Dict[str, str]] = {
@@ -30,6 +31,7 @@ TEXT = {
         "new_country": "🌍 {app} se ha conectado a un país nuevo: {country}.\nDestino: {org} · {ip}\n"
                        "Si no esperabas esto, revísalo.",
         "org_unknown": "propietario desconocido",
+        "new_sensor_app": "🎙️ {app} ha usado {sensor} por primera vez.\nSi no lo esperabas, revísalo.",
         "big_upload": "📤 {app} ha subido {size} a internet en la última hora.\n"
                       "Si no estabas enviando archivos ni en una videollamada, revísalo.",
     },
@@ -40,6 +42,7 @@ TEXT = {
         "new_country": "🌍 {app} connected to a new country: {country}.\nDestination: {org} · {ip}\n"
                        "If you did not expect this, check it.",
         "org_unknown": "unknown owner",
+        "new_sensor_app": "🎙️ {app} used the {sensor} for the first time.\nIf you did not expect this, check it.",
         "big_upload": "📤 {app} uploaded {size} to the internet in the last hour.\n"
                       "If you were not sending files or on a video call, check it.",
     },
@@ -61,7 +64,8 @@ def message(e: Event, lang: str = "en") -> str:
     lang = _lang(lang)
     t = TEXT[lang]
     return t[e.kind].format(app=e.app, country=country_name(e.country, lang), org=e.org or t["org_unknown"],
-                            ip=e.remote_ip or "?", size=human(e.bytes_out))
+                            ip=e.remote_ip or "?", size=human(e.bytes_out),
+                            sensor=sensor_label(e.sensor or "", lang))
 
 
 Post = Callable[[str, dict], object]

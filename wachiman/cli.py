@@ -6,6 +6,7 @@
                                         history: which app reached which company/country
     wachiman radar traffic [--since 24h]
                                         bytes sent and received per app
+    wachiman radar sensors [--since 7d] who used the mic, camera or screen recording
     wachiman radar events [--since 7d]  what was worth an alert
     wachiman radar geo-update           download/refresh the offline IP owner database
     wachiman service install|uninstall|status
@@ -21,7 +22,7 @@ from pathlib import Path
 from typing import Callable, List, Mapping, Optional
 
 from . import notify, paths, service
-from .radar import geo, net, store, traffic
+from .radar import geo, net, sensors, store, traffic
 
 UNITS = {"m": 60, "h": 3600, "d": 86400}
 
@@ -38,6 +39,12 @@ def parse_since(text: Optional[str], now: int) -> Optional[int]:
 def _dest(proto: str, ip: str, port: int) -> str:
     host = "[%s]" % ip if ":" in ip else ip
     return "%s %s:%s" % (proto.lower(), host, port)
+
+
+def _dur(seconds: int) -> str:
+    m, s = divmod(max(0, seconds), 60)
+    h, m = divmod(m, 60)
+    return "%dh%02dm" % (h, m) if h else ("%dm" % m if m else "%ds" % s)
 
 
 def _fmt_ts(ts: int) -> str:
@@ -62,6 +69,8 @@ def _parser() -> argparse.ArgumentParser:
     n.add_argument("--app")
     t = rsub.add_parser("traffic", help="bytes sent/received per app")
     t.add_argument("--since", default="24h")
+    se = rsub.add_parser("sensors", help="mic / camera / screen recording history")
+    se.add_argument("--since", default="7d")
     e = rsub.add_parser("events", help="alerts history")
     e.add_argument("--since", default="7d")
     rsub.add_parser("geo-update", help="download the offline IP owner database")
@@ -71,7 +80,8 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = None,
-         sampler: Callable = net.sample, traffic_sampler: Callable = traffic.sample, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
+         sampler: Callable = net.sample, traffic_sampler: Callable = traffic.sample,
+         sensor_reader: Callable = sensors.read, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
          clock: Callable[[], float] = time.time) -> int:
     env = os.environ if env is None else env
     parser = _parser()
@@ -124,6 +134,11 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
                         per_app[name] = (old[0] + b_in, old[1] + b_out)
                     events += db.record_traffic(ts, per_app, upload_limit)
                     db.set_meta("nettop", traffic.dumps(counters))
+                    last = float(db.get_meta("sensors_until") or ts - 60)
+                    states = sensor_reader(last)
+                    events += db.record_sensors(states, learning=first)
+                    if states:
+                        db.set_meta("sensors_until", repr(states[-1][0]))
                     if first:
                         print("baseline learned: %d connections. From now on only news is reported." % len(sample))
                     else:
@@ -149,12 +164,21 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
                          ["APP", "SENT", "RECEIVED"]))
             return 0
 
+        if args.cmd == "sensors":
+            rows = db.sensor_sessions(since=parse_since(args.since, now))
+            print(_table([[_fmt_ts(r["start"]), r["kind"], r["app"],
+                           _dur((r["end"] or now) - r["start"]) + ("" if r["end"] else " (now)"), r["bundle"]]
+                          for r in rows],
+                         ["STARTED", "SENSOR", "APP", "FOR", "BUNDLE"]))
+            return 0
+
         if args.cmd == "events":
             rows = db.events(since=parse_since(args.since, now))
             print(_table([[_fmt_ts(r["ts"]), r["kind"], r["app"], r["country"] or "-", r["org"] or "-",
-                           r["remote_ip"] or "-", traffic.human(r["bytes_out"]) if r["bytes_out"] else "-"]
+                           r["remote_ip"] or r["sensor"] or "-",
+                           traffic.human(r["bytes_out"]) if r["bytes_out"] else "-"]
                           for r in rows],
-                         ["WHEN", "KIND", "APP", "CC", "OWNER", "IP", "SENT"]))
+                         ["WHEN", "KIND", "APP", "CC", "OWNER", "IP/SENSOR", "SENT"]))
             return 0
     finally:
         db.close()
