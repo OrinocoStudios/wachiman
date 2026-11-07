@@ -32,7 +32,7 @@ class ParseTest(unittest.TestCase):
             line("2026-11-07 00:31:19.871000+0100", "[]"),
         ])
         states = sensors.parse_log(text)
-        self.assertEqual([round(ts) for ts, _ in states], [1793928675, 1793928680])
+        self.assertEqual([round(ts) for ts, _ in states], [1794007875, 1794007880])
         self.assertEqual(states[0][1], {("mic", "Siri", "com.apple.CoreSpeech")})
         self.assertEqual(states[1][1], set())
 
