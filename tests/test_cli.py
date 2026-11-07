@@ -33,6 +33,7 @@ class CliTest(unittest.TestCase):
         self.traffic = lambda: {}
         self.sensors = lambda since: []
         self.keyboard = lambda: []
+        self.devices = lambda: []
         self.samples = [
             [("Slack", sock("34.237.73.95"))],
             [("Slack", sock("34.237.73.95")), ("evil", sock("95.163.10.1"))],
@@ -49,6 +50,7 @@ class CliTest(unittest.TestCase):
                             traffic_sampler=lambda: self.traffic(),
                             sensor_reader=lambda since: self.sensors(since),
                             keyboard_reader=lambda: self.keyboard(),
+                            device_reader=lambda: self.devices(),
                             geo_factory=lambda path: FakeGeo(),
                             sender=lambda settings, text: self.sent.append(text) or True,
                             clock=lambda: 1_800_000_000)
@@ -148,6 +150,19 @@ class CliTest(unittest.TestCase):
         self.samples = [[]]
         self.run_cli("radar", "scan")
         self.assertEqual(len([m for m in self.sent if "evil" in m]), 1)
+
+    def test_devices_lists_what_was_seen(self):
+        from wachiman.radar.devices import Device
+        self.devices = lambda: [Device("usb", "usb:1", "Razer Kiyo X", "Razer", True),
+                                Device("bt", "bt:2", "AirPods", "Headphones", False)]
+        self.samples = [[]]
+        self.run_cli("radar", "scan")
+        code, out = self.run_cli("radar", "devices")
+        self.assertEqual(code, 0)
+        self.assertIn("Razer Kiyo X", out)
+        self.assertIn("AirPods", out)
+        code, out = self.run_cli("radar", "devices", "--kind", "bt")
+        self.assertNotIn("Razer", out)
 
     def test_usage_on_unknown_command(self):
         code, out = self.run_cli("nope")

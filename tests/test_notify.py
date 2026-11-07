@@ -61,6 +61,18 @@ class KeyboardMessageTest(unittest.TestCase):
         self.assertIn("keyboard", notify.message(e))
 
 
+class DeviceMessageTest(unittest.TestCase):
+    def test_new_device_by_kind(self):
+        usb = Event(ts=0, kind="new_device", app="Flash Disk", remote_ip=None, country=None, org=None, sensor="usb")
+        self.assertIn("USB", notify.message(usb, lang="es"))
+        self.assertIn("Flash Disk", notify.message(usb, lang="es"))
+        bt = Event(ts=0, kind="new_device", app="Magic Keyboard", remote_ip=None, country=None, org=None, sensor="bt")
+        self.assertIn("Bluetooth", notify.message(bt, lang="es"))
+        net = Event(ts=0, kind="new_device", app="Wi-Fi Cafe", remote_ip=None, country=None, org=None, sensor="net")
+        self.assertIn("red", notify.message(net, lang="es"))
+        self.assertIn("network", notify.message(net))
+
+
 class TelegramTest(unittest.TestCase):
     def test_does_nothing_without_credentials(self):
         calls = []
