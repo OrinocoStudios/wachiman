@@ -32,6 +32,7 @@ class CliTest(unittest.TestCase):
         self.sent = []
         self.traffic = lambda: {}
         self.sensors = lambda since: []
+        self.keyboard = lambda: []
         self.samples = [
             [("Slack", sock("34.237.73.95"))],
             [("Slack", sock("34.237.73.95")), ("evil", sock("95.163.10.1"))],
@@ -47,6 +48,7 @@ class CliTest(unittest.TestCase):
                             sampler=lambda: self.samples.pop(0) if self.samples else [],
                             traffic_sampler=lambda: self.traffic(),
                             sensor_reader=lambda since: self.sensors(since),
+                            keyboard_reader=lambda: self.keyboard(),
                             geo_factory=lambda path: FakeGeo(),
                             sender=lambda settings, text: self.sent.append(text) or True,
                             clock=lambda: 1_800_000_000)
@@ -117,6 +119,16 @@ class CliTest(unittest.TestCase):
         self.assertIn("Zoom", out)
         self.assertIn("mic", out)
         self.assertIn("10m", out)  # 600 s
+
+    def test_keyboard_lists_programs_reading_keys(self):
+        from wachiman.radar.keyboard import Tap
+        self.keyboard = lambda: [Tap("Raycast", "/Applications/Raycast.app/Contents/MacOS/Raycast", "Raycast Inc", False)]
+        self.samples = [[]]
+        self.run_cli("radar", "scan")
+        code, out = self.run_cli("radar", "keyboard")
+        self.assertEqual(code, 0)
+        self.assertIn("Raycast", out)
+        self.assertIn("Raycast Inc", out)
 
     def test_usage_on_unknown_command(self):
         code, out = self.run_cli("nope")

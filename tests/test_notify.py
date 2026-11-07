@@ -50,6 +50,17 @@ class SensorMessageTest(unittest.TestCase):
         self.assertIn("camera", notify.message(e))
 
 
+class KeyboardMessageTest(unittest.TestCase):
+    def test_new_keyboard_tap(self):
+        e = Event(ts=0, kind="new_keyboard_tap", app="evil", remote_ip=None, country=None, org=None,
+                  signer="unsigned")
+        es = notify.message(e, lang="es")
+        self.assertIn("evil", es)
+        self.assertIn("teclado", es)
+        self.assertIn("sin firmar", es)
+        self.assertIn("keyboard", notify.message(e))
+
+
 class TelegramTest(unittest.TestCase):
     def test_does_nothing_without_credentials(self):
         calls = []
