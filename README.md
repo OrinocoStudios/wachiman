@@ -26,7 +26,7 @@ Early. The first modules run on the author's Mac and are being cleaned up for pu
 | Stealer watch | New LaunchAgents and login items, stealer artefacts, known command-and-control domains | Running privately, being ported |
 | Memory watch | Memory pressure and swap rate alerts | Running privately, being ported |
 | **Radar: network** | Which app connects where (company and country) | **Usable** (CLI, alerts) |
-| Radar: mic and camera | Which app turned them on, when and for how long | Planned |
+| **Radar: mic and camera** | Which app used the mic, camera or screen recording, when and for how long | **Usable** |
 | Radar: permissions | Apps granted keyboard (Input Monitoring, Accessibility) or screen recording access | Planned |
 | Radar: devices | New USB, Bluetooth and Wi-Fi networks | Planned |
 | Web view | Local page with the history | Planned |
@@ -57,14 +57,18 @@ Then, any time:
 bin/wachiman radar net --since 24h        # which app reached which company and country
 bin/wachiman radar net --app Slack
 bin/wachiman radar traffic --since 24h    # bytes sent and received per app
+bin/wachiman radar sensors --since 7d     # who used the mic, camera or screen recording
 bin/wachiman radar events --since 7d      # what was worth an alert
 ```
 
-What counts as news, on purpose only three things so it stays quiet:
+What counts as news, on purpose only four things so it stays quiet:
 
 - an app that never used the internet before does so now;
 - a known app reaches a **country** it never reached before;
-- an app uploads more than `WACHIMAN_UPLOAD_ALERT_MB` (default 100 MB) within one hour.
+- an app uploads more than `WACHIMAN_UPLOAD_ALERT_MB` (default 100 MB) within one hour;
+- an app uses the **microphone, camera or screen recording** for the first time.
+
+Mic and camera history comes from the same source as the orange and green dots in the menu bar: macOS logs every change together with the app responsible. Wachiman reads that log (`log show`, no special permission) and never touches the sensors themselves. The first scan picks up the last minute only; history starts when the radar starts.
 
 Upload totals come from `nettop` and are a lower bound: a connection that opens and closes entirely between two scans is not counted. A sustained upload, which is what data theft looks like, is.
 
@@ -96,7 +100,7 @@ python3 -m unittest discover -s tests -t .
 
 1. Repository, licence and layout. ✅
 2. Radar: network history per app, bytes sent, background service. ✅
-3. Radar: microphone and camera.
+3. Radar: microphone, camera and screen recording. ✅
 4. Radar: keyboard and screen permissions.
 5. Radar: devices.
 6. Port the private Guard, Stealer watch and Memory watch modules.
