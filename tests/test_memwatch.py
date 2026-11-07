@@ -126,7 +126,7 @@ class MemLevelTest(MemCase):
         self.telegram()
         self.write_config("WACHIMAN_MEM_POLL=0\nWACHIMAN_LANG=es\n")
         self.run_loop([50, 15], [0, 0])
-        self.assertIn("Memoria CRIT", self.alerts()[0])
+        self.assertIn("Memoria WARN", self.alerts()[0])
         self.assertIn("marca de agua", self.alerts()[0])
 
     def test_no_credentials_still_runs_and_logs(self):
