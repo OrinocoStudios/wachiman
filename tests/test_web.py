@@ -90,6 +90,27 @@ class ApiTest(unittest.TestCase):
         _, narrow = self.call("/api/connections", {"since": "30m"})
         self.assertGreater(len(wide["connections"]), len(narrow["connections"]))
 
+    def test_connections_grouped_by_app_company_country(self):
+        cf = Owner(13335, "US", "Cloudflare, Inc.")
+        self.db.record(NOW - 200, [("Brave", sock("1.1.1.1"))], lambda ip: cf)
+        self.db.record(NOW - 100, [("Brave", sock("1.1.1.1")), ("Brave", sock("1.1.1.2")),
+                                   ("Brave", sock("1.1.1.2", 80))], lambda ip: cf)
+        _, body = self.call("/api/connections", {"since": "24h", "app": "brave", "group": "1"})
+        rows = body["connections"]
+        self.assertEqual(len(rows), 1)
+        r = rows[0]
+        self.assertEqual((r["app"], r["org"], r["country"], r["ips"], r["connections"]),
+                         ("Brave", "Cloudflare, Inc.", "US", 2, 3))
+        self.assertEqual(r["last_seen"], NOW - 100)
+        self.assertEqual(r["samples"], 4)
+
+    def test_connections_ungrouped_stays_available(self):
+        _, body = self.call("/api/connections", {"since": "24h", "app": "slack"})
+        self.assertIn("remote_ip", body["connections"][0])
+
+    def test_page_asks_for_grouped_connections(self):
+        self.assertIn("group=1", web.PAGE)
+
     def test_connections_limit(self):
         _, body = self.call("/api/connections", {"limit": "1"})
         self.assertEqual(len(body["connections"]), 1)
