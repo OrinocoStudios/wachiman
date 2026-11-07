@@ -130,6 +130,20 @@ class CliTest(unittest.TestCase):
         self.assertIn("Raycast", out)
         self.assertIn("Raycast Inc", out)
 
+    def test_a_module_added_later_learns_its_own_baseline(self):
+        # history created by an older version that had no keyboard module
+        self.samples = [[], [], []]
+        self.run_cli("radar", "scan")
+        self.run_cli("radar", "scan")
+        from wachiman.radar.keyboard import Tap
+        self.keyboard = lambda: [Tap("Siri", "/System/Siri", "Apple", True)]
+        self.run_cli("radar", "scan")  # first scan WITH the keyboard module: learn, do not alert
+        self.assertEqual([m for m in self.sent if "Siri" in m], [])
+        self.keyboard = lambda: [Tap("Siri", "/System/Siri", "Apple", True), Tap("evil", "/tmp/evil", "unsigned", True)]
+        self.samples = [[]]
+        self.run_cli("radar", "scan")
+        self.assertEqual(len([m for m in self.sent if "evil" in m]), 1)
+
     def test_usage_on_unknown_command(self):
         code, out = self.run_cli("nope")
         self.assertEqual(code, 2)
