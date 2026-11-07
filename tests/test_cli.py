@@ -135,6 +135,11 @@ class CliTest(unittest.TestCase):
         self.samples = [[], [], []]
         self.run_cli("radar", "scan")
         self.run_cli("radar", "scan")
+        import sqlite3
+        con = sqlite3.connect(str(Path(self.tmp.name) / ".wachiman" / "radar.db"))
+        con.execute("DELETE FROM meta WHERE key LIKE 'baseline_%'")  # as written by a version without modules
+        con.commit()
+        con.close()
         from wachiman.radar.keyboard import Tap
         self.keyboard = lambda: [Tap("Siri", "/System/Siri", "Apple", True)]
         self.run_cli("radar", "scan")  # first scan WITH the keyboard module: learn, do not alert
