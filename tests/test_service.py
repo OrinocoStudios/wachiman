@@ -13,7 +13,7 @@ class PlistTest(unittest.TestCase):
 
     def test_runs_radar_watch_from_the_checkout(self):
         self.assertEqual(self.p["Label"], "io.orinoco.wachiman.radar")
-        self.assertEqual(self.p["ProgramArguments"], ["/usr/bin/python3", "-m", "wachiman", "radar", "watch"])
+        self.assertEqual(self.p["ProgramArguments"], ["/usr/bin/python3", "-u", "-m", "wachiman", "radar", "watch"])
         self.assertEqual(self.p["WorkingDirectory"], "/opt/wachiman")
         self.assertEqual(self.p["EnvironmentVariables"]["PYTHONPATH"], "/opt/wachiman")
 
