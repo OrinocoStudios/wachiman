@@ -44,7 +44,7 @@ TEXT = {
         "new_country": "🌍 {app} connected to a new country: {country}.\nDestination: {org} · {ip}\n"
                        "If you did not expect this, check it.",
         "org_unknown": "unknown owner",
-        "new_keyboard_tap": "⌨️ {app} started reading what you type.\nSigned by: {signer}\n"
+        "new_keyboard_tap": "⌨️ {app} started reading the keyboard (what you type).\nSigned by: {signer}\n"
                             "Normal for launchers, shortcut and accessibility tools. If you do not know it, check it.",
         "new_sensor_app": "🎙️ {app} used the {sensor} for the first time.\nIf you did not expect this, check it.",
         "big_upload": "📤 {app} uploaded {size} to the internet in the last hour.\n"

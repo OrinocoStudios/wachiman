@@ -48,7 +48,7 @@ def parse_signer(codesign_output: str) -> str:
     for line in text.splitlines():
         if line.startswith("Authority="):
             first = line[len("Authority="):].strip()
-            if first in ("Software Signing", "Apple Mac OS Application Signing"):
+            if first in ("Software Signing", "macOS Software Signing", "Apple Mac OS Application Signing"):
                 return "Apple"
             for prefix in ("Developer ID Application: ", "Apple Development: ", "Apple Distribution: "):
                 if first.startswith(prefix):
