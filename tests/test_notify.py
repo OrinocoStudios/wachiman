@@ -42,6 +42,14 @@ class UploadMessageTest(unittest.TestCase):
         self.assertIn("250.0 MB", notify.message(e))
 
 
+class SensorMessageTest(unittest.TestCase):
+    def test_new_sensor_app(self):
+        e = Event(ts=0, kind="new_sensor_app", app="Zoom", remote_ip=None, country=None, org=None, sensor="cam")
+        self.assertIn("Zoom", notify.message(e, lang="es"))
+        self.assertIn("cámara", notify.message(e, lang="es"))
+        self.assertIn("camera", notify.message(e))
+
+
 class TelegramTest(unittest.TestCase):
     def test_does_nothing_without_credentials(self):
         calls = []
