@@ -1,0 +1,20 @@
+# secrets and local state never go to git
+.env
+*.env
+bots.env
+*.conf
+!*.conf.example
+*.db
+*.sqlite
+*.log
+*.pid
+*.state
+*.baseline
+*.since
+*.debug
+*.jpg
+*.png
+!docs/**/*.png
+__pycache__/
+.venv/
+.DS_Store
