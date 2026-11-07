@@ -1,0 +1,80 @@
+"""Telegram alerts in plain language. Optional: without a token nothing is sent."""
+from __future__ import annotations
+
+import json
+import urllib.parse
+import urllib.request
+from typing import Callable, Dict, Mapping, Optional
+
+from .radar.store import Event
+
+COUNTRIES: Dict[str, Dict[str, str]] = {
+    "es": {"ES": "España", "US": "Estados Unidos", "RU": "Rusia", "CN": "China", "IE": "Irlanda",
+           "DE": "Alemania", "FR": "Francia", "GB": "Reino Unido", "NL": "Países Bajos", "VE": "Venezuela",
+           "MX": "México", "BR": "Brasil", "IN": "India", "JP": "Japón", "KP": "Corea del Norte", "IR": "Irán",
+           "UA": "Ucrania", "SG": "Singapur", "HK": "Hong Kong", "CA": "Canadá", "SE": "Suecia", "FI": "Finlandia",
+           "CH": "Suiza", "IT": "Italia", "PT": "Portugal", "EE": "Estonia", "BY": "Bielorrusia", "TR": "Turquía"},
+    "en": {"ES": "Spain", "US": "United States", "RU": "Russia", "CN": "China", "IE": "Ireland",
+           "DE": "Germany", "FR": "France", "GB": "United Kingdom", "NL": "Netherlands", "VE": "Venezuela",
+           "MX": "Mexico", "BR": "Brazil", "IN": "India", "JP": "Japan", "KP": "North Korea", "IR": "Iran",
+           "UA": "Ukraine", "SG": "Singapore", "HK": "Hong Kong", "CA": "Canada", "SE": "Sweden", "FI": "Finland",
+           "CH": "Switzerland", "IT": "Italy", "PT": "Portugal", "EE": "Estonia", "BY": "Belarus", "TR": "Turkey"},
+}
+
+TEXT = {
+    "es": {
+        "unknown": "país desconocido",
+        "new_app": "🆕 {app} se ha conectado a internet por primera vez.\nDestino: {org} ({country}) · {ip}\n"
+                   "¿Conoces esta app? Si no, revísala.",
+        "new_country": "🌍 {app} se ha conectado a un país nuevo: {country}.\nDestino: {org} · {ip}\n"
+                       "Si no esperabas esto, revísalo.",
+        "org_unknown": "propietario desconocido",
+    },
+    "en": {
+        "unknown": "unknown country",
+        "new_app": "🆕 {app} connected to the internet for the first time.\nDestination: {org} ({country}) · {ip}\n"
+                   "Do you know this app? If not, check it.",
+        "new_country": "🌍 {app} connected to a new country: {country}.\nDestination: {org} · {ip}\n"
+                       "If you did not expect this, check it.",
+        "org_unknown": "unknown owner",
+    },
+}
+
+
+def _lang(lang: Optional[str]) -> str:
+    return lang if lang in TEXT else "en"
+
+
+def country_name(code: Optional[str], lang: str = "en") -> str:
+    lang = _lang(lang)
+    if not code:
+        return TEXT[lang]["unknown"]
+    return COUNTRIES[lang].get(code, code)
+
+
+def message(e: Event, lang: str = "en") -> str:
+    lang = _lang(lang)
+    t = TEXT[lang]
+    return t[e.kind].format(app=e.app, country=country_name(e.country, lang), org=e.org or t["org_unknown"],
+                            ip=e.remote_ip or "?")
+
+
+Post = Callable[[str, dict], object]
+
+
+def _post(url: str, data: dict) -> object:
+    body = urllib.parse.urlencode(data).encode()
+    with urllib.request.urlopen(urllib.request.Request(url, data=body), timeout=15) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def send(settings: Mapping[str, str], text: str, post: Post = _post) -> bool:
+    token = settings.get("WACHIMAN_TELEGRAM_BOT_TOKEN", "")
+    chat = settings.get("WACHIMAN_TELEGRAM_CHAT_ID", "")
+    if not token or not chat:
+        return False
+    try:
+        post("https://api.telegram.org/bot%s/sendMessage" % token, {"chat_id": chat, "text": text})
+        return True
+    except Exception:  # alerts must never take the radar down
+        return False
