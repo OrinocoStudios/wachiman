@@ -28,7 +28,7 @@ Early. The first modules run on the author's Mac and are being cleaned up for pu
 | **Radar: network** | Which app connects where (company and country) | **Usable** (CLI, alerts) |
 | **Radar: mic and camera** | Which app used the mic, camera or screen recording, when and for how long | **Usable** |
 | **Radar: keyboard** | Programs reading the keyboard right now (event taps) and who signed them | **Usable** |
-| Radar: devices | New USB, Bluetooth and Wi-Fi networks | Planned |
+| **Radar: devices** | USB devices, paired Bluetooth devices and networks (Wi-Fi name or router) | **Usable** |
 | Web view | Local page with the history | Planned |
 
 Platform: **macOS** first. Linux is a goal once the macOS modules are stable.
@@ -59,16 +59,18 @@ bin/wachiman radar net --app Slack
 bin/wachiman radar traffic --since 24h    # bytes sent and received per app
 bin/wachiman radar sensors --since 7d     # who used the mic, camera or screen recording
 bin/wachiman radar keyboard               # programs seen reading the keyboard, and their signer
+bin/wachiman radar devices --kind usb     # usb | bt | net
 bin/wachiman radar events --since 7d      # what was worth an alert
 ```
 
-What counts as news, on purpose only five things so it stays quiet:
+What counts as news, on purpose only six things so it stays quiet:
 
 - an app that never used the internet before does so now;
 - a known app reaches a **country** it never reached before;
 - an app uploads more than `WACHIMAN_UPLOAD_ALERT_MB` (default 100 MB) within one hour;
 - an app uses the **microphone, camera or screen recording** for the first time;
-- a program never seen before starts **reading the keyboard**.
+- a program never seen before starts **reading the keyboard**;
+- a **USB device**, **paired Bluetooth device** or **network** never seen before shows up. A USB stick that presents itself as a keyboard ("BadUSB") is how someone with 30 seconds at your desk types commands into your Mac.
 
 A keylogger on macOS has to install an *event tap*. CoreGraphics lists every active tap and its owner without any permission, so Wachiman sees them directly, and records who signed the program: Apple, a named developer, or nobody. An unsigned program reading keystrokes is the classic stealer pattern. Launchers, shortcut tools and accessibility apps legitimately do this too; the alert tells you *which* one, you decide.
 
@@ -106,7 +108,7 @@ python3 -m unittest discover -s tests -t .
 2. Radar: network history per app, bytes sent, background service. ✅
 3. Radar: microphone, camera and screen recording. ✅
 4. Radar: programs reading the keyboard. ✅
-5. Radar: devices.
+5. Radar: USB, Bluetooth and networks. ✅
 6. Port the private Guard, Stealer watch and Memory watch modules.
 7. Installer and local web view.
 
