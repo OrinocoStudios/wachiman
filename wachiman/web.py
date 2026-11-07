@@ -40,7 +40,7 @@ UI = {
         "sensors_help": "Which app used the microphone, camera or screen recording, and for how long.",
         "kb_help": "Programs that can read what you type. Launchers and accessibility tools do this legitimately.",
         "dev_help": "USB devices, paired Bluetooth devices and networks seen.",
-        "app": "App", "company": "Company", "country": "Country", "last": "Last seen", "times": "Times",
+        "app": "App", "company": "Company", "country": "Country", "last": "Last seen", "times": "Times", "ips": "IPs",
         "sent": "Sent", "received": "Received", "when": "Started", "what": "What", "for": "For", "now": "now",
         "program": "Program", "signed": "Signed by", "can_change": "Can change keys", "yes": "yes", "no": "no",
         "kind": "Type", "name": "Name", "vendor": "Maker / type", "first": "First seen",
@@ -57,7 +57,7 @@ UI = {
         "sensors_help": "Qué app usó el micrófono, la cámara o la grabación de pantalla, y durante cuánto.",
         "kb_help": "Programas que pueden leer lo que tecleas. Lanzadores y herramientas de accesibilidad lo hacen con motivo.",
         "dev_help": "Dispositivos USB, Bluetooth emparejados y redes vistas.",
-        "app": "App", "company": "Empresa", "country": "País", "last": "Última vez", "times": "Veces",
+        "app": "App", "company": "Empresa", "country": "País", "last": "Última vez", "times": "Veces", "ips": "IPs",
         "sent": "Enviado", "received": "Recibido", "when": "Inicio", "what": "Qué", "for": "Durante", "now": "ahora",
         "program": "Programa", "signed": "Firmado por", "can_change": "Puede cambiar teclas", "yes": "sí", "no": "no",
         "kind": "Tipo", "name": "Nombre", "vendor": "Fabricante / tipo", "first": "Primera vez",
@@ -135,6 +135,24 @@ def handle(db: store.Store, path: str, query: Mapping[str, str], now: int, lang:
 
     if name == "/api/connections":
         rows = db.connections(since=since, app=query.get("app") or None)
+        if query.get("group") == "1":
+            groups = {}
+            for r in rows:
+                key = (r["app"], r["org"] or "", r["country"] or "")
+                g = groups.setdefault(key, {"app": r["app"], "org": r["org"], "country": r["country"],
+                                            "country_name": notify.country_name(r["country"], lang)
+                                            if r["country"] else "",
+                                            "ips": set(), "connections": 0, "samples": 0,
+                                            "first_seen": r["first_seen"], "last_seen": r["last_seen"]})
+                g["ips"].add(r["remote_ip"])
+                g["connections"] += 1
+                g["samples"] += r["samples"]
+                g["first_seen"] = min(g["first_seen"], r["first_seen"])
+                g["last_seen"] = max(g["last_seen"], r["last_seen"])
+            out = sorted(groups.values(), key=lambda g: (-g["last_seen"], g["app"].lower(), g["org"] or ""))
+            for g in out:
+                g["ips"] = len(g["ips"])
+            return 200, {"connections": out[:limit], "truncated": len(out) > limit}
         return 200, {"connections": [
             {"app": r["app"], "remote_ip": r["remote_ip"], "remote_port": r["remote_port"], "proto": r["proto"],
              "country": r["country"], "country_name": notify.country_name(r["country"], lang) if r["country"] else "",
@@ -241,11 +259,11 @@ function table(cols, rows) {
   return t;
 }
 var TABS = {
-  net: {label: "tab_net", help: "net_help", path: function () { return "/api/connections?since=" + since; },
+  net: {label: "tab_net", help: "net_help", path: function () { return "/api/connections?group=1&since=" + since; },
     rows: function (d) { return d.connections; },
     cols: function () { return [[UI.app, function (r) { return r.app; }], [UI.company, function (r) { return r.org || "?"; }],
       [UI.country, function (r) { return r.country_name || r.country || "?"; }], [UI.last, function (r) { return fmt(r.last_seen); }],
-      [UI.times, function (r) { return r.samples; }]]; }},
+      [UI.ips, function (r) { return r.ips; }], [UI.times, function (r) { return r.samples; }]]; }},
   up: {label: "tab_up", help: "up_help", path: function () { return "/api/traffic?since=" + since; },
     rows: function (d) { return d.traffic; },
     cols: function () { return [[UI.app, function (r) { return r.app; }], [UI.sent, function (r) { return r.sent; }],
