@@ -4,6 +4,8 @@
     wachiman radar watch                scan forever every WACHIMAN_RADAR_INTERVAL seconds
     wachiman radar net [--since 24h] [--app NAME]
                                         history: which app reached which company/country
+    wachiman radar traffic [--since 24h]
+                                        bytes sent and received per app
     wachiman radar events [--since 7d]  what was worth an alert
     wachiman radar geo-update           download/refresh the offline IP owner database
 """
@@ -17,7 +19,7 @@ from pathlib import Path
 from typing import Callable, List, Mapping, Optional
 
 from . import notify, paths
-from .radar import geo, net, store
+from .radar import geo, net, store, traffic
 
 UNITS = {"m": 60, "h": 3600, "d": 86400}
 
@@ -56,6 +58,8 @@ def _parser() -> argparse.ArgumentParser:
     n = rsub.add_parser("net", help="connection history")
     n.add_argument("--since", default="24h")
     n.add_argument("--app")
+    t = rsub.add_parser("traffic", help="bytes sent/received per app")
+    t.add_argument("--since", default="24h")
     e = rsub.add_parser("events", help="alerts history")
     e.add_argument("--since", default="7d")
     rsub.add_parser("geo-update", help="download the offline IP owner database")
@@ -63,7 +67,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = None,
-         sampler: Callable = net.sample, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
+         sampler: Callable = net.sample, traffic_sampler: Callable = traffic.sample, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
          clock: Callable[[], float] = time.time) -> int:
     env = os.environ if env is None else env
     parser = _parser()
@@ -97,10 +101,21 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
                 print("note: no IP owner database yet, run `wachiman radar geo-update`", file=sys.stderr)
             try:
                 interval = max(5, int(settings.get("WACHIMAN_RADAR_INTERVAL", "30") or 30))
+                upload_limit = int(float(settings.get("WACHIMAN_UPLOAD_ALERT_MB", "100") or 0) * 1024 * 1024)
                 while True:
                     first = not db._baseline_done()
                     sample = sampler()
-                    events = db.record(int(clock()), sample, g.lookup)
+                    ts = int(clock())
+                    events = db.record(ts, sample, g.lookup)
+                    counters = traffic_sampler()
+                    moved = traffic.delta(traffic.loads(db.get_meta("nettop")), counters)
+                    per_app: dict = {}
+                    for pid, (b_in, b_out) in moved.items():
+                        name = counters[pid][0]
+                        old = per_app.get(name, (0, 0))
+                        per_app[name] = (old[0] + b_in, old[1] + b_out)
+                    events += db.record_traffic(ts, per_app, upload_limit)
+                    db.set_meta("nettop", traffic.dumps(counters))
                     if first:
                         print("baseline learned: %d connections. From now on only news is reported." % len(sample))
                     else:
@@ -120,11 +135,18 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
                          ["APP", "CC", "OWNER", "DESTINATION", "FIRST SEEN", "LAST SEEN", "SEEN"]))
             return 0
 
+        if args.cmd == "traffic":
+            rows = db.traffic(since=parse_since(args.since, now))
+            print(_table([[r["app"], traffic.human(r["bytes_out"]), traffic.human(r["bytes_in"])] for r in rows],
+                         ["APP", "SENT", "RECEIVED"]))
+            return 0
+
         if args.cmd == "events":
             rows = db.events(since=parse_since(args.since, now))
-            print(_table([[_fmt_ts(r["ts"]), r["kind"], r["app"], r["country"] or "?", r["org"] or "?",
-                           r["remote_ip"] or "?"] for r in rows],
-                         ["WHEN", "KIND", "APP", "CC", "OWNER", "IP"]))
+            print(_table([[_fmt_ts(r["ts"]), r["kind"], r["app"], r["country"] or "-", r["org"] or "-",
+                           r["remote_ip"] or "-", traffic.human(r["bytes_out"]) if r["bytes_out"] else "-"]
+                          for r in rows],
+                         ["WHEN", "KIND", "APP", "CC", "OWNER", "IP", "SENT"]))
             return 0
     finally:
         db.close()
