@@ -31,6 +31,17 @@ class MessageTest(unittest.TestCase):
         self.assertIn("Russia", notify.message(e))
 
 
+class UploadMessageTest(unittest.TestCase):
+    def test_big_upload_in_spanish_and_english(self):
+        e = Event(ts=0, kind="big_upload", app="evil", remote_ip=None, country=None, org=None,
+                  bytes_out=250 * 1024 * 1024)
+        es = notify.message(e, lang="es")
+        self.assertIn("evil", es)
+        self.assertIn("250.0 MB", es)
+        self.assertIn("última hora", es)
+        self.assertIn("250.0 MB", notify.message(e))
+
+
 class TelegramTest(unittest.TestCase):
     def test_does_nothing_without_credentials(self):
         calls = []

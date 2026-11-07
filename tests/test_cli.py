@@ -30,6 +30,7 @@ class CliTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.env = {"HOME": self.tmp.name}
         self.sent = []
+        self.traffic = lambda: {}
         self.samples = [
             [("Slack", sock("34.237.73.95"))],
             [("Slack", sock("34.237.73.95")), ("evil", sock("95.163.10.1"))],
@@ -43,6 +44,7 @@ class CliTest(unittest.TestCase):
         with redirect_stdout(buf):
             code = cli.main(list(argv), env=self.env,
                             sampler=lambda: self.samples.pop(0) if self.samples else [],
+                            traffic_sampler=lambda: self.traffic(),
                             geo_factory=lambda path: FakeGeo(),
                             sender=lambda settings, text: self.sent.append(text) or True,
                             clock=lambda: 1_800_000_000)
@@ -88,6 +90,18 @@ class CliTest(unittest.TestCase):
         code, out = self.run_cli("radar", "events")
         self.assertIn("new_app", out)
         self.assertIn("evil", out)
+
+    def test_traffic_counts_upload_between_scans(self):
+        counters = [{1: ("Slack", 100, 1000)}, {1: ("Slack", 300, 6000)}]
+        self.traffic = lambda: counters.pop(0) if counters else {}
+        self.samples = [[], []]
+        self.run_cli("radar", "scan")
+        self.run_cli("radar", "scan")
+        code, out = self.run_cli("radar", "traffic")
+        self.assertEqual(code, 0)
+        self.assertIn("Slack", out)
+        self.assertIn("4.9 KB", out)  # 5000 bytes up
+        self.assertIn("200 B", out)
 
     def test_usage_on_unknown_command(self):
         code, out = self.run_cli("nope")
