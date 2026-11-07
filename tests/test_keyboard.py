@@ -44,6 +44,10 @@ class SignerTest(unittest.TestCase):
         self.assertEqual(keyboard.parse_signer(CODESIGN_NONE), "unsigned")
         self.assertEqual(keyboard.parse_signer(""), "unknown")
 
+    def test_macos_system_binaries_are_apple(self):
+        out = "Identifier=com.apple.Siri\nAuthority=macOS Software Signing\nAuthority=Apple Root CA\n"
+        self.assertEqual(keyboard.parse_signer(out), "Apple")
+
 
 class TapsTest(unittest.TestCase):
     def test_keeps_enabled_keyboard_taps_one_per_program(self):
