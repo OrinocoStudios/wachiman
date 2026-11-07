@@ -9,6 +9,7 @@ What counts as news (deliberately few, to avoid alert fatigue):
   new_country  a known app reaches a country it never reached before
   big_upload   one app sent more than the configured limit within one clock hour
   new_sensor_app  an app uses the mic, camera or screen recording for the first time
+  new_keyboard_tap  a program never seen before starts reading the keyboard
 The very first sample only learns the baseline and reports nothing.
 """
 from __future__ import annotations
@@ -39,6 +40,10 @@ CREATE TABLE IF NOT EXISTS sensor_sessions (
   start INTEGER NOT NULL, "end" INTEGER
 );
 CREATE INDEX IF NOT EXISTS sensor_sessions_start ON sensor_sessions (start);
+CREATE TABLE IF NOT EXISTS keyboard_taps (
+  path TEXT PRIMARY KEY, app TEXT NOT NULL, signer TEXT NOT NULL, can_modify INTEGER NOT NULL,
+  first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS traffic (
   app TEXT NOT NULL, hour INTEGER NOT NULL, bytes_in INTEGER NOT NULL, bytes_out INTEGER NOT NULL,
   alerted INTEGER NOT NULL DEFAULT 0,
@@ -57,6 +62,7 @@ class Event:
     org: Optional[str]
     bytes_out: int = 0
     sensor: Optional[str] = None
+    signer: Optional[str] = None
 
 
 Lookup = Callable[[str], Optional[Owner]]
@@ -74,6 +80,8 @@ class Store:
             self.con.execute("ALTER TABLE events ADD COLUMN bytes_out INTEGER NOT NULL DEFAULT 0")
         if "sensor" not in cols:
             self.con.execute("ALTER TABLE events ADD COLUMN sensor TEXT")
+        if "signer" not in cols:
+            self.con.execute("ALTER TABLE events ADD COLUMN signer TEXT")
 
     def close(self) -> None:
         self.con.close()
@@ -117,6 +125,29 @@ class Store:
             q += " WHERE hour >= ?"
             args.append(since - since % 3600)
         return self.con.execute(q + " GROUP BY app ORDER BY bytes_out DESC, app", args).fetchall()
+
+    def record_keyboard(self, ts: int, taps: Iterable, learning: bool) -> List[Event]:
+        """Remember every program seen reading keys; alert on programs never seen before."""
+        events: List[Event] = []
+        known = {r[0] for r in self.con.execute("SELECT path FROM keyboard_taps")}
+        with self.con:
+            for t in taps:
+                self.con.execute(
+                    "INSERT INTO keyboard_taps (path, app, signer, can_modify, first_seen, last_seen)"
+                    " VALUES (?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET last_seen=excluded.last_seen,"
+                    " signer=excluded.signer, can_modify=max(can_modify, excluded.can_modify)",
+                    (t.path, t.app, t.signer, int(t.can_modify), ts, ts))
+                if learning or t.path in known or t.path.startswith("pid:"):
+                    continue
+                known.add(t.path)
+                e = Event(ts, "new_keyboard_tap", t.app, None, None, None, 0, None, t.signer)
+                self.con.execute("INSERT INTO events (ts, kind, app, signer) VALUES (?,?,?,?)",
+                                 (ts, e.kind, t.app, t.signer))
+                events.append(e)
+        return events
+
+    def keyboard_taps(self) -> List[sqlite3.Row]:
+        return self.con.execute("SELECT * FROM keyboard_taps ORDER BY last_seen DESC, app").fetchall()
 
     def sensors_active(self) -> Set[Tuple[str, str, str]]:
         rows = self.con.execute('SELECT kind, app, bundle FROM sensor_sessions WHERE "end" IS NULL')

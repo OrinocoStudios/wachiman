@@ -7,6 +7,7 @@
     wachiman radar traffic [--since 24h]
                                         bytes sent and received per app
     wachiman radar sensors [--since 7d] who used the mic, camera or screen recording
+    wachiman radar keyboard             programs seen reading the keyboard, and who signed them
     wachiman radar events [--since 7d]  what was worth an alert
     wachiman radar geo-update           download/refresh the offline IP owner database
     wachiman service install|uninstall|status
@@ -22,7 +23,7 @@ from pathlib import Path
 from typing import Callable, List, Mapping, Optional
 
 from . import notify, paths, service
-from .radar import geo, net, sensors, store, traffic
+from .radar import geo, keyboard, net, sensors, store, traffic
 
 UNITS = {"m": 60, "h": 3600, "d": 86400}
 
@@ -71,6 +72,7 @@ def _parser() -> argparse.ArgumentParser:
     t.add_argument("--since", default="24h")
     se = rsub.add_parser("sensors", help="mic / camera / screen recording history")
     se.add_argument("--since", default="7d")
+    rsub.add_parser("keyboard", help="programs reading the keyboard")
     e = rsub.add_parser("events", help="alerts history")
     e.add_argument("--since", default="7d")
     rsub.add_parser("geo-update", help="download the offline IP owner database")
@@ -81,7 +83,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = None,
          sampler: Callable = net.sample, traffic_sampler: Callable = traffic.sample,
-         sensor_reader: Callable = sensors.read, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
+         sensor_reader: Callable = sensors.read, keyboard_reader: Callable = keyboard.read, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
          clock: Callable[[], float] = time.time) -> int:
     env = os.environ if env is None else env
     parser = _parser()
@@ -139,6 +141,7 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
                     events += db.record_sensors(states, learning=first)
                     if states:
                         db.set_meta("sensors_until", repr(states[-1][0]))
+                    events += db.record_keyboard(ts, keyboard_reader(), learning=first)
                     if first:
                         print("baseline learned: %d connections. From now on only news is reported." % len(sample))
                     else:
@@ -172,13 +175,20 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
                          ["STARTED", "SENSOR", "APP", "FOR", "BUNDLE"]))
             return 0
 
+        if args.cmd == "keyboard":
+            rows = db.keyboard_taps()
+            print(_table([[r["app"], r["signer"], "yes" if r["can_modify"] else "no", _fmt_ts(r["first_seen"]),
+                           _fmt_ts(r["last_seen"]), r["path"]] for r in rows],
+                         ["PROGRAM", "SIGNED BY", "CAN MODIFY", "FIRST SEEN", "LAST SEEN", "PATH"]))
+            return 0
+
         if args.cmd == "events":
             rows = db.events(since=parse_since(args.since, now))
             print(_table([[_fmt_ts(r["ts"]), r["kind"], r["app"], r["country"] or "-", r["org"] or "-",
-                           r["remote_ip"] or r["sensor"] or "-",
+                           r["remote_ip"] or r["sensor"] or r["signer"] or "-",
                            traffic.human(r["bytes_out"]) if r["bytes_out"] else "-"]
                           for r in rows],
-                         ["WHEN", "KIND", "APP", "CC", "OWNER", "IP/SENSOR", "SENT"]))
+                         ["WHEN", "KIND", "APP", "CC", "OWNER", "DETAIL", "SENT"]))
             return 0
     finally:
         db.close()

@@ -31,6 +31,8 @@ TEXT = {
         "new_country": "🌍 {app} se ha conectado a un país nuevo: {country}.\nDestino: {org} · {ip}\n"
                        "Si no esperabas esto, revísalo.",
         "org_unknown": "propietario desconocido",
+        "new_keyboard_tap": "⌨️ {app} ha empezado a leer el teclado (lo que tecleas).\nFirmado por: {signer}\n"
+                            "Es normal en lanzadores, gestores de atajos o accesibilidad. Si no la conoces, revísala.",
         "new_sensor_app": "🎙️ {app} ha usado {sensor} por primera vez.\nSi no lo esperabas, revísalo.",
         "big_upload": "📤 {app} ha subido {size} a internet en la última hora.\n"
                       "Si no estabas enviando archivos ni en una videollamada, revísalo.",
@@ -42,11 +44,21 @@ TEXT = {
         "new_country": "🌍 {app} connected to a new country: {country}.\nDestination: {org} · {ip}\n"
                        "If you did not expect this, check it.",
         "org_unknown": "unknown owner",
+        "new_keyboard_tap": "⌨️ {app} started reading what you type.\nSigned by: {signer}\n"
+                            "Normal for launchers, shortcut and accessibility tools. If you do not know it, check it.",
         "new_sensor_app": "🎙️ {app} used the {sensor} for the first time.\nIf you did not expect this, check it.",
         "big_upload": "📤 {app} uploaded {size} to the internet in the last hour.\n"
                       "If you were not sending files or on a video call, check it.",
     },
 }
+
+
+SIGNERS = {"es": {"unsigned": "nadie (sin firmar) ⚠️", "unknown": "desconocido"},
+           "en": {"unsigned": "nobody (unsigned) ⚠️", "unknown": "unknown"}}
+
+
+def signer_label(signer: Optional[str], lang: str = "en") -> str:
+    return SIGNERS[_lang(lang)].get(signer or "unknown", signer or "unknown")
 
 
 def _lang(lang: Optional[str]) -> str:
@@ -65,7 +77,7 @@ def message(e: Event, lang: str = "en") -> str:
     t = TEXT[lang]
     return t[e.kind].format(app=e.app, country=country_name(e.country, lang), org=e.org or t["org_unknown"],
                             ip=e.remote_ip or "?", size=human(e.bytes_out),
-                            sensor=sensor_label(e.sensor or "", lang))
+                            sensor=sensor_label(e.sensor or "", lang), signer=signer_label(e.signer, lang))
 
 
 Post = Callable[[str, dict], object]
