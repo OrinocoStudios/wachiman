@@ -10,6 +10,7 @@ What counts as news (deliberately few, to avoid alert fatigue):
   big_upload   one app sent more than the configured limit within one clock hour
   new_sensor_app  an app uses the mic, camera or screen recording for the first time
   new_keyboard_tap  a program never seen before starts reading the keyboard
+  new_device   a USB device, paired Bluetooth device or network never seen before
 The very first sample only learns the baseline and reports nothing.
 """
 from __future__ import annotations
@@ -42,6 +43,10 @@ CREATE TABLE IF NOT EXISTS sensor_sessions (
 CREATE INDEX IF NOT EXISTS sensor_sessions_start ON sensor_sessions (start);
 CREATE TABLE IF NOT EXISTS keyboard_taps (
   path TEXT PRIMARY KEY, app TEXT NOT NULL, signer TEXT NOT NULL, can_modify INTEGER NOT NULL,
+  first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS devices (
+  id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, vendor TEXT NOT NULL,
   first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS traffic (
@@ -145,6 +150,31 @@ class Store:
                                  (ts, e.kind, t.app, t.signer))
                 events.append(e)
         return events
+
+    def record_devices(self, ts: int, devs: Iterable, learning: bool) -> List[Event]:
+        events: List[Event] = []
+        known = {r[0] for r in self.con.execute("SELECT id FROM devices")}
+        with self.con:
+            for d in devs:
+                self.con.execute(
+                    "INSERT INTO devices (id, kind, name, vendor, first_seen, last_seen) VALUES (?,?,?,?,?,?)"
+                    " ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen, name=excluded.name",
+                    (d.id, d.kind, d.name, d.vendor, ts, ts))
+                if learning or d.id in known:
+                    continue
+                known.add(d.id)
+                e = Event(ts, "new_device", d.name, None, None, None, 0, d.kind)
+                self.con.execute("INSERT INTO events (ts, kind, app, sensor) VALUES (?,?,?,?)",
+                                 (ts, e.kind, d.name, d.kind))
+                events.append(e)
+        return events
+
+    def devices(self, kind: Optional[str] = None) -> List[sqlite3.Row]:
+        q, args = "SELECT * FROM devices", []
+        if kind:
+            q += " WHERE kind = ?"
+            args.append(kind)
+        return self.con.execute(q + " ORDER BY kind, last_seen DESC, name", args).fetchall()
 
     def keyboard_taps(self) -> List[sqlite3.Row]:
         return self.con.execute("SELECT * FROM keyboard_taps ORDER BY last_seen DESC, app").fetchall()

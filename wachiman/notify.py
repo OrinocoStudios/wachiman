@@ -31,6 +31,7 @@ TEXT = {
         "new_country": "🌍 {app} se ha conectado a un país nuevo: {country}.\nDestino: {org} · {ip}\n"
                        "Si no esperabas esto, revísalo.",
         "org_unknown": "propietario desconocido",
+        "new_device": "🔌 Nuevo {device}: {app}.\nSi no lo has conectado tú, revísalo.",
         "new_keyboard_tap": "⌨️ {app} ha empezado a leer el teclado (lo que tecleas).\nFirmado por: {signer}\n"
                             "Es normal en lanzadores, gestores de atajos o accesibilidad. Si no la conoces, revísala.",
         "new_sensor_app": "🎙️ {app} ha usado {sensor} por primera vez.\nSi no lo esperabas, revísalo.",
@@ -44,6 +45,7 @@ TEXT = {
         "new_country": "🌍 {app} connected to a new country: {country}.\nDestination: {org} · {ip}\n"
                        "If you did not expect this, check it.",
         "org_unknown": "unknown owner",
+        "new_device": "🔌 New {device}: {app}.\nIf you did not connect it, check it.",
         "new_keyboard_tap": "⌨️ {app} started reading the keyboard (what you type).\nSigned by: {signer}\n"
                             "Normal for launchers, shortcut and accessibility tools. If you do not know it, check it.",
         "new_sensor_app": "🎙️ {app} used the {sensor} for the first time.\nIf you did not expect this, check it.",
@@ -52,6 +54,9 @@ TEXT = {
     },
 }
 
+
+DEVICES = {"es": {"usb": "dispositivo USB", "bt": "dispositivo Bluetooth emparejado", "net": "red"},
+           "en": {"usb": "USB device", "bt": "paired Bluetooth device", "net": "network"}}
 
 SIGNERS = {"es": {"unsigned": "nadie (sin firmar) ⚠️", "unknown": "desconocido"},
            "en": {"unsigned": "nobody (unsigned) ⚠️", "unknown": "unknown"}}
@@ -77,7 +82,8 @@ def message(e: Event, lang: str = "en") -> str:
     t = TEXT[lang]
     return t[e.kind].format(app=e.app, country=country_name(e.country, lang), org=e.org or t["org_unknown"],
                             ip=e.remote_ip or "?", size=human(e.bytes_out),
-                            sensor=sensor_label(e.sensor or "", lang), signer=signer_label(e.signer, lang))
+                            sensor=sensor_label(e.sensor or "", lang), signer=signer_label(e.signer, lang),
+                            device=DEVICES[lang].get(e.sensor or "", e.sensor or ""))
 
 
 Post = Callable[[str, dict], object]

@@ -8,6 +8,8 @@
                                         bytes sent and received per app
     wachiman radar sensors [--since 7d] who used the mic, camera or screen recording
     wachiman radar keyboard             programs seen reading the keyboard, and who signed them
+    wachiman radar devices [--kind usb|bt|net]
+                                        USB devices, paired Bluetooth devices and networks seen
     wachiman radar events [--since 7d]  what was worth an alert
     wachiman radar geo-update           download/refresh the offline IP owner database
     wachiman service install|uninstall|status
@@ -23,7 +25,7 @@ from pathlib import Path
 from typing import Callable, List, Mapping, Optional
 
 from . import notify, paths, service
-from .radar import geo, keyboard, net, sensors, store, traffic
+from .radar import devices, geo, keyboard, net, sensors, store, traffic
 
 UNITS = {"m": 60, "h": 3600, "d": 86400}
 
@@ -73,6 +75,8 @@ def _parser() -> argparse.ArgumentParser:
     se = rsub.add_parser("sensors", help="mic / camera / screen recording history")
     se.add_argument("--since", default="7d")
     rsub.add_parser("keyboard", help="programs reading the keyboard")
+    dv = rsub.add_parser("devices", help="USB / Bluetooth / networks seen")
+    dv.add_argument("--kind", choices=["usb", "bt", "net"])
     e = rsub.add_parser("events", help="alerts history")
     e.add_argument("--since", default="7d")
     rsub.add_parser("geo-update", help="download the offline IP owner database")
@@ -83,7 +87,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = None,
          sampler: Callable = net.sample, traffic_sampler: Callable = traffic.sample,
-         sensor_reader: Callable = sensors.read, keyboard_reader: Callable = keyboard.read, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
+         sensor_reader: Callable = sensors.read, keyboard_reader: Callable = keyboard.read,
+         device_reader: Callable = devices.read, geo_factory: Callable = geo.Geo, sender: Callable = notify.send,
          clock: Callable[[], float] = time.time) -> int:
     env = os.environ if env is None else env
     parser = _parser()
@@ -145,6 +150,8 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
                     events += db.record_keyboard(ts, keyboard_reader(),
                                                  learning=db.get_meta("baseline_keyboard") is None)
                     db.set_meta("baseline_keyboard", str(ts))
+                    events += db.record_devices(ts, device_reader(), learning=db.get_meta("baseline_devices") is None)
+                    db.set_meta("baseline_devices", str(ts))
                     if first:
                         print("baseline learned: %d connections. From now on only news is reported." % len(sample))
                     else:
@@ -183,6 +190,13 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
             print(_table([[r["app"], r["signer"], "yes" if r["can_modify"] else "no", _fmt_ts(r["first_seen"]),
                            _fmt_ts(r["last_seen"]), r["path"]] for r in rows],
                          ["PROGRAM", "SIGNED BY", "CAN MODIFY", "FIRST SEEN", "LAST SEEN", "PATH"]))
+            return 0
+
+        if args.cmd == "devices":
+            rows = db.devices(kind=args.kind)
+            print(_table([[r["kind"], r["name"], r["vendor"] or "-", _fmt_ts(r["first_seen"]), _fmt_ts(r["last_seen"])]
+                          for r in rows],
+                         ["KIND", "NAME", "VENDOR/TYPE", "FIRST SEEN", "LAST SEEN"]))
             return 0
 
         if args.cmd == "events":
