@@ -8,6 +8,8 @@
                                         bytes sent and received per app
     wachiman radar events [--since 7d]  what was worth an alert
     wachiman radar geo-update           download/refresh the offline IP owner database
+    wachiman service install|uninstall|status
+                                        run `radar watch` in the background (macOS launchd)
 """
 from __future__ import annotations
 
@@ -18,7 +20,7 @@ import time
 from pathlib import Path
 from typing import Callable, List, Mapping, Optional
 
-from . import notify, paths
+from . import notify, paths, service
 from .radar import geo, net, store, traffic
 
 UNITS = {"m": 60, "h": 3600, "d": 86400}
@@ -63,6 +65,8 @@ def _parser() -> argparse.ArgumentParser:
     e = rsub.add_parser("events", help="alerts history")
     e.add_argument("--since", default="7d")
     rsub.add_parser("geo-update", help="download the offline IP owner database")
+    svc = sub.add_parser("service", help="run the radar in the background (macOS)")
+    svc.add_argument("action", choices=["install", "uninstall", "status"])
     return p
 
 
@@ -75,6 +79,10 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return int(exc.code or 0)
+    if args.module == "service":
+        if args.action == "install":
+            return service.install(Path(__file__).resolve().parent.parent, sys.executable)
+        return service.uninstall() if args.action == "uninstall" else service.status()
     if args.module != "radar" or not args.cmd:
         parser.print_help()
         return 2
