@@ -18,13 +18,14 @@ It is built for two kinds of people:
 
 ## Status
 
-Early. The first modules run on the author's Mac and are being cleaned up for public use.
+Early. Every module below runs on the author's Mac.
 
 | Module | What it does | State |
 |---|---|---|
-| Guard | Alert plus webcam photos when someone touches the computer while the screen is locked | Running privately, being ported |
-| Stealer watch | New LaunchAgents and login items, stealer artefacts, known command-and-control domains | Running privately, being ported |
-| Memory watch | Memory pressure and swap rate alerts | Running privately, being ported |
+| **Guard** | Alert plus webcam photos when someone touches the computer while the screen is locked | **Usable** |
+| **Stealer watch** | New or modified LaunchAgents and login items, stealer artefacts, known command-and-control domains | **Usable** |
+| **Memory watch** | Memory pressure and swapout rate alerts | **Usable** |
+| **Telegram gateway** | Drive all of the above from your phone with fixed commands | **Usable** |
 | **Radar: network** | Which app connects where (company and country) | **Usable** (CLI, alerts) |
 | **Radar: mic and camera** | Which app used the mic, camera or screen recording, when and for how long | **Usable** |
 | **Radar: keyboard** | Programs reading the keyboard right now (event taps) and who signed them | **Usable** |
@@ -80,6 +81,63 @@ Upload totals come from `nettop` and are a lower bound: a connection that opens 
 
 **CC is the country where the company owning the IP is registered**, not where the server physically sits. A Google server in Ireland shows as `US`. That is what matters for "who gets my data", and it needs no online lookups.
 
+## Guard, Stealer watch, Memory watch
+
+Plain shell loops (no AI in them) that alert you on Telegram. Set `WACHIMAN_TELEGRAM_BOT_TOKEN` and `WACHIMAN_TELEGRAM_CHAT_ID` first (see below); without them they still run and write their log, they just cannot message you. Files go under `$WACHIMAN_HOME/guard`, `stealerwatch` and `memwatch`.
+
+### Guard
+
+```sh
+bin/wachiman guard start-nolock   # start watching, screen stays as it is (good for a first test)
+bin/wachiman guard start          # start watching and lock the screen now
+bin/wachiman guard status | stop
+```
+
+While the screen is locked, an **idle edge** (still for at least 60 s, then activity within 10 s) sends an alert and takes three webcam photos with `ffmpeg` (`brew install ffmpeg`; found on `PATH`, or set `WACHIMAN_FFMPEG`). At most one burst per minute. Photos are named `YYYY-MM-DD_HH-MM-SS_N.jpg` in `$WACHIMAN_HOME/guard/` and sent to Telegram.
+
+- **Paranoid by default.** If you unlock within 30 s of a burst, Guard does *not* delete the photos, because unlocking only proves it was you if your Mac really asks for a password. Once you have confirmed that by hand, set `WACHIMAN_GUARD_PARANOID=0` to delete the photos on a quick unlock.
+- The first time, macOS asks the app that launched Guard (your terminal) for camera access.
+- The camera is chosen by name (`WACHIMAN_CAM_NAME`, matched against `ffmpeg`'s device list at every start) because avfoundation indexes change when USB devices come and go; `WACHIMAN_CAM` is only the fallback index.
+- Lock state is read from the loginwindow shield (`shieldWindowShowing:1/0` in the unified log), not from `ioreg`, which is wrong on recent macOS. `wachiman guard status` shows which source it used. Set `WACHIMAN_GUARD_DEBUG=1` for one line per poll in `guard.debug`.
+- Locking uses `SACLockScreenImmediate` through `python3` ctypes; no Accessibility permission needed.
+- The camera LED lights up during a burst and cannot be disabled.
+
+### Stealer watch
+
+```sh
+bin/wachiman stealerwatch baseline   # learn what is normal here (also what you run after accepting a change)
+bin/wachiman stealerwatch scan       # one pass on screen, sends nothing
+bin/wachiman stealerwatch watch      # loop every 5 minutes, alert on changes only
+```
+
+It does not match malware signatures. It watches the places a stealer has to write to survive a reboot: LaunchAgents/LaunchDaemons (new **or modified**, by hash), login items, loot files such as `/tmp/osalogging.zip`, connections to known command-and-control domains (`WACHIMAN_STEALER_C2_DOMAINS`), and unsigned, quarantined executables dropped under `~/Library`. Whatever exists when the baseline is taken never alerts; each finding alerts once per hour.
+
+### Memory watch
+
+```sh
+bin/wachiman memwatch now      # pressure, free memory and the top 5 apps by memory
+bin/wachiman memwatch watch    # loop every 20 s, alert on WARN / CRIT / recovery
+```
+
+Alerts come from the kernel's free-memory percentage (WARN at 20%, CRIT at 10%) and from the swapout *rate* (25 MB/s), the latter only when pressure is already below 35%. **Swap used never alerts**: macOS never shrinks it while the Mac stays up, so it is shown as context only. Recovery is announced only after pressure climbs 5 points past the WARN threshold, so the bot does not flap.
+
+### Telegram gateway
+
+```sh
+bin/wachiman gateway run                   # long-polling bot, one process
+bin/wachiman gateway run --once /status    # run one command and exit (testing)
+```
+
+Commands: `/status /on /test /off /lock /log /debug /photos /last /deletephotos /mem /top /thresholds /memtest /stealer /help`. Spanish aliases also work (`/estado /prueba /bloquea /fotos /ultimas /borrafotos /umbrales /ayuda`). Commands are fixed: nothing you type after the command reaches a shell. Only your configured chat is answered; any other chat is ignored and logged. `/deletephotos` must be sent twice within two minutes. The Telegram "/" menu and `/help` are built from the same table.
+
+To keep the gateway and the two watchers running in the background (macOS launchd, label `io.orinoco.wachiman.*`; no secrets are written into the agent):
+
+```sh
+bin/wachiman service install --agent gateway      # also: memwatch, stealerwatch (radar is the default)
+```
+
+Guard is deliberately not a background service: it takes photos, so you start it yourself (or with `/on`).
+
 ## Settings and files
 
 Everything lives under `~/.wachiman/` by default; nothing is tied to a user name or a fixed path.
@@ -93,6 +151,17 @@ Everything lives under `~/.wachiman/` by default; nothing is tied to a user name
 | `WACHIMAN_TELEGRAM_BOT_TOKEN` / `_CHAT_ID` | empty | alerts on Telegram (optional) |
 | `WACHIMAN_UPLOAD_ALERT_MB` | `100` | alert when one app uploads more than this in an hour (`0` = off) |
 | `WACHIMAN_LANG` | `en` | alert language: `en`, `es` |
+| `WACHIMAN_TELEGRAM_API` | `https://api.telegram.org` | Bot API base URL (for tests) |
+| `WACHIMAN_GUARD_POLL` / `_IDLE_ACTIVE` / `_IDLE_QUIET` | `3` / `10` / `60` | Guard: seconds between polls; idle below this = activity; idle at least this before = edge |
+| `WACHIMAN_GUARD_BURST_COOLDOWN` / `_GRACE` | `60` / `30` | Guard: seconds between bursts; seconds to unlock after a burst |
+| `WACHIMAN_GUARD_PARANOID` | `1` | `0` deletes photos on a quick unlock (only if your Mac asks for a password) |
+| `WACHIMAN_GUARD_DEBUG` / `_SKIP_FRAMES` / `_PHOTO_GAP` | `0` / `12` / `1` | Guard: per-poll debug line; black frames to skip; seconds between photos |
+| `WACHIMAN_CAM_NAME` / `WACHIMAN_CAM` / `WACHIMAN_FFMPEG` | empty / `0` / from `PATH` | camera by name, fallback index, ffmpeg binary |
+| `WACHIMAN_MEM_POLL` / `_COOLDOWN` | `20` / `900` | Memory watch: seconds between samples; between repeats of the same level |
+| `WACHIMAN_MEM_PRESSURE_WARN` / `_CRIT` | `20` / `10` | alert when the kernel's free % is at or below |
+| `WACHIMAN_MEM_SWAPOUT_WARN_MBS` / `_SWAPOUT_GATE_PRESS` / `_RECOVER_MARGIN` | `25` / `35` / `5` | swapout MB/s that warns, only below this pressure %; hysteresis points |
+| `WACHIMAN_STEALER_POLL` / `_COOLDOWN` | `300` / `3600` | Stealer watch: seconds between passes; between repeats of one finding |
+| `WACHIMAN_STEALER_C2_DOMAINS` | built-in list | space-separated domains to check for live connections |
 
 Put them in `$WACHIMAN_HOME/config.env` (see [config.env.example](config.env.example)) or export them; the environment wins.
 
@@ -109,7 +178,7 @@ python3 -m unittest discover -s tests -t .
 3. Radar: microphone, camera and screen recording. ✅
 4. Radar: programs reading the keyboard. ✅
 5. Radar: USB, Bluetooth and networks. ✅
-6. Port the private Guard, Stealer watch and Memory watch modules.
+6. Guard, Stealer watch, Memory watch and the Telegram gateway. ✅
 7. Installer and local web view.
 
 ## Contributing
