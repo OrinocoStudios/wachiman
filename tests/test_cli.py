@@ -68,6 +68,13 @@ class CliTest(unittest.TestCase):
         self.assertIn("Amazon.com, Inc.", out)
         self.assertIn("RU", out)
 
+    def test_destination_shows_protocol_and_brackets_ipv6(self):
+        self.samples = [[("Chrome", sock("2a00:1450:4003:80e::200e"))]]
+        self.run_cli("radar", "scan")
+        code, out = self.run_cli("radar", "net")
+        self.assertIn("tcp [2a00:1450:4003:80e::200e]:443", out)
+        self.assertNotIn("::200e:443", out.replace("]:443", ""))
+
     def test_net_filters_by_app(self):
         self.run_cli("radar", "scan")
         self.run_cli("radar", "scan")
