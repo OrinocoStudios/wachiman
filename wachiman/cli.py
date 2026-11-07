@@ -138,10 +138,13 @@ def main(argv: Optional[List[str]] = None, env: Optional[Mapping[str, str]] = No
                     db.set_meta("nettop", traffic.dumps(counters))
                     last = float(db.get_meta("sensors_until") or ts - 60)
                     states = sensor_reader(last)
-                    events += db.record_sensors(states, learning=first)
+                    events += db.record_sensors(states, learning=db.get_meta("baseline_sensors") is None)
+                    db.set_meta("baseline_sensors", str(ts))
                     if states:
                         db.set_meta("sensors_until", repr(states[-1][0]))
-                    events += db.record_keyboard(ts, keyboard_reader(), learning=first)
+                    events += db.record_keyboard(ts, keyboard_reader(),
+                                                 learning=db.get_meta("baseline_keyboard") is None)
+                    db.set_meta("baseline_keyboard", str(ts))
                     if first:
                         print("baseline learned: %d connections. From now on only news is reported." % len(sample))
                     else:
