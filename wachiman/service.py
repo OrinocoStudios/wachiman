@@ -34,7 +34,7 @@ def plist(repo: Path, python: str, env: Optional[Mapping[str, str]] = None) -> b
     log = str(home / "radar.log")
     return plistlib.dumps({
         "Label": LABEL,
-        "ProgramArguments": [python, "-m", "wachiman", "radar", "watch"],
+        "ProgramArguments": [python, "-u", "-m", "wachiman", "radar", "watch"],
         "WorkingDirectory": str(repo),
         "EnvironmentVariables": agent_env,
         "RunAtLoad": True,
