@@ -45,18 +45,28 @@ bin/wachiman radar scan         # first scan learns what is normal, reports noth
 bin/wachiman radar watch        # keeps scanning; reports only what is new
 ```
 
-In another terminal:
+Or leave it running in the background (macOS; starts again at every login):
+
+```sh
+bin/wachiman service install     # uninstall | status
+```
+
+Then, any time:
 
 ```sh
 bin/wachiman radar net --since 24h        # which app reached which company and country
 bin/wachiman radar net --app Slack
+bin/wachiman radar traffic --since 24h    # bytes sent and received per app
 bin/wachiman radar events --since 7d      # what was worth an alert
 ```
 
-What counts as news, on purpose only two things so it stays quiet:
+What counts as news, on purpose only three things so it stays quiet:
 
 - an app that never used the internet before does so now;
-- a known app reaches a **country** it never reached before.
+- a known app reaches a **country** it never reached before;
+- an app uploads more than `WACHIMAN_UPLOAD_ALERT_MB` (default 100 MB) within one hour.
+
+Upload totals come from `nettop` and are a lower bound: a connection that opens and closes entirely between two scans is not counted. A sustained upload, which is what data theft looks like, is.
 
 **CC is the country where the company owning the IP is registered**, not where the server physically sits. A Google server in Ireland shows as `US`. That is what matters for "who gets my data", and it needs no online lookups.
 
@@ -71,6 +81,7 @@ Everything lives under `~/.wachiman/` by default; nothing is tied to a user name
 | `WACHIMAN_GEO_DB` | `$WACHIMAN_HOME/geo.db` | IP owner database |
 | `WACHIMAN_RADAR_INTERVAL` | `30` | seconds between scans |
 | `WACHIMAN_TELEGRAM_BOT_TOKEN` / `_CHAT_ID` | empty | alerts on Telegram (optional) |
+| `WACHIMAN_UPLOAD_ALERT_MB` | `100` | alert when one app uploads more than this in an hour (`0` = off) |
 | `WACHIMAN_LANG` | `en` | alert language: `en`, `es` |
 
 Put them in `$WACHIMAN_HOME/config.env` (see [config.env.example](config.env.example)) or export them; the environment wins.
@@ -84,7 +95,7 @@ python3 -m unittest discover -s tests -t .
 ## Roadmap
 
 1. Repository, licence and layout. ✅
-2. Radar: network history per app. ✅ (bytes sent per app: next)
+2. Radar: network history per app, bytes sent, background service. ✅
 3. Radar: microphone and camera.
 4. Radar: keyboard and screen permissions.
 5. Radar: devices.
